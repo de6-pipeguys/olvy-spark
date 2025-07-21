@@ -2,7 +2,7 @@ CREATE SCHEMA test_oju;
 
 DROP TABLE IF EXISTS test_oju.flag_table;
 CREATE TABLE test_oju.flag_table (
-    goodsName   VARCHAR(100),
+    goodsName   VARCHAR(500),
     createdAt   TIMESTAMP,
     flagName    VARCHAR(100)
 );
