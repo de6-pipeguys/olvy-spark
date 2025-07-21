@@ -9,10 +9,10 @@ CREATE TABLE test_oju.flag_table (
 
 DROP TABLE IF EXISTS test_oju.reviewDetail_table;
 CREATE TABLE test_oju.reviewDetail_table (
-    goodsName   VARCHAR(100),
+    goodsName   VARCHAR(500),
     createdAt   TIMESTAMP,
-    type        VARCHAR(20),
-    value       VARCHAR(20),
+    type        VARCHAR(50),
+    value       VARCHAR(50),
     gauge       INTEGER,
     category    VARCHAR(20)
 );
