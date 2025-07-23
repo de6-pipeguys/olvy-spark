@@ -110,34 +110,42 @@ df_processed = df_cleaned \
     .filter(col("goodsName") != "")
 
 # 2. 용량 문자열에서 용량만 추출
-df_processed = df_processed.withColumn(
-    "capacity",
-    expr(r"""
-        aggregate(
-            transform(
-                regexp_extract_all(
-                    CASE 
-                        WHEN instr(capacity, '옵션') > 0 THEN 
-                            regexp_extract(capacity, '옵션[^옵션]*', 0)
-                        ELSE 
-                            capacity
-                    END,
-                    '(\\d+(?:\\.\\d+)?)[ ]*(m[lL]|g)(?:[ ]*\\*[ ]*\\d+)?',
-                    0
+if "capacity" in df_processed.columns:
+    df_processed = df_processed.withColumn(
+        "capacity",
+        expr(r"""
+            aggregate(
+                transform(
+                    regexp_extract_all(
+                        CASE 
+                            WHEN instr(capacity, '옵션') > 0 THEN 
+                                regexp_extract(capacity, '옵션[^옵션]*', 0)
+                            ELSE 
+                                capacity
+                        END,
+                        '(\\d+(?:\\.\\d+)?)[ ]*(m[lL]|g)(?:[ ]*\\*[ ]*\\d+)?',
+                        0
+                    ),
+                    x -> 
+                        IF(
+                            instr(x, '*') > 0,
+                            cast(regexp_extract(x, '(\\d+(?:\\.\\d+)?)', 1) as double) * 
+                            cast(regexp_extract(x, '\\*[ ]*(\\d+)', 1) as double),
+                            cast(regexp_extract(x, '(\\d+(?:\\.\\d+)?)', 1) as double)
+                        )
                 ),
-                x -> 
-                    IF(
-                        instr(x, '*') > 0,
-                        cast(regexp_extract(x, '(\\d+(?:\\.\\d+)?)', 1) as double) * 
-                        cast(regexp_extract(x, '\\*[ ]*(\\d+)', 1) as double),
-                        cast(regexp_extract(x, '(\\d+(?:\\.\\d+)?)', 1) as double)
-                    )
-            ),
-            0D,
-            (acc, x) -> acc + x
-        )
-    """).cast("double")
-)
+                0D,
+                (acc, x) -> acc + x
+            )
+        """).cast("double")
+    )
+else:
+    # capacity 컬럼이 없으면 "" 값으로 생성
+    df_processed = df_processed.withColumn("capacity", lit("").cast("string"))
+
+# review_detail → reviewDetail 컬럼명 통일
+if "review_detail" in df_processed.columns and "reviewDetail" not in df_processed.columns:
+    df_processed = df_processed.withColumnRenamed("review_detail", "reviewDetail")
 
 # 3. reviewDetail의 gauge에서 % 제거하고 int로 변환하는 함수
 def clean_review_detail_gauge(review_detail):
@@ -145,7 +153,12 @@ def clean_review_detail_gauge(review_detail):
         return []
     result = []
     for item in review_detail:
-        new_item = item.asDict() if hasattr(item, "asDict") else dict(item)
+        # 이미 dict이면 그대로 사용, Row면 asDict(), 아니면 skip
+        if isinstance(item, dict):
+            new_item = item.copy()
+        elif hasattr(item, "asDict"):
+            new_item = item.asDict()
+            
         gauge_str = new_item.get("gauge", "")
         try:
             new_item["gauge"] = int(gauge_str.replace("%", "")) if gauge_str else None
@@ -197,10 +210,13 @@ df_processed = df_processed \
     .withColumn("salePrice", regexp_replace(col("salePrice"), ",", "").cast("int")) \
     .withColumn("originalPrice", regexp_replace(col("originalPrice"), ",", "").cast("int"))
 
-# originalPrice가 null 또는 0이면 salePrice 값으로 대체
+# originalPrice가 null, 0, 또는 ""(빈 문자열)이면 salePrice 값으로 대체
 df_processed = df_processed.withColumn(
     "originalPrice",
-    when((col("originalPrice").isNull()) | (col("originalPrice") == 0), col("salePrice")).otherwise(col("originalPrice"))
+    when(
+        (col("originalPrice").isNull()) | (col("originalPrice") == 0) | (col("originalPrice") == ""),
+        col("salePrice")
+    ).otherwise(col("originalPrice"))
 )
 
 # 6. pctOf1 ~ pctOf5 컬럼을 정수형으로 변환 (% 기호 제거 후 int로 변환)
@@ -218,10 +234,33 @@ if "reviewDetail" in df_processed.columns:
         clean_review_detail_gauge_udf(col("reviewDetail"))
     )
 
-# category 컬럼이 없으면 파일명에 따라 category 값 추가
+# 소스 파일명 추출 (확장자 제거)
+source_filename = os.path.splitext(os.path.basename(input_path))[0]
+
 if "category" not in df_processed.columns:
     category_value = None
     input_path_lower = input_path.lower()
+    if "skincare" in input_path_lower:
+        category_value = "스킨케어"
+    elif "manscare" in input_path_lower:
+        category_value = "맨즈케어"
+    elif "idealforman" in input_path_lower:
+        category_value = "맨즈케어"
+    elif "cleansing" in input_path_lower:
+        category_value = "클렌징"
+    elif "food" in input_path_lower:
+        category_value = "푸드"
+    elif "haircare" in input_path_lower:
+        category_value = "헤어케어"
+    elif "suncare" in input_path_lower:
+        category_value = "선케어"
+    if category_value:
+        df_processed = df_processed.withColumn("category", lit(category_value))
+
+category_value = None
+input_path_lower = input_path.lower()
+# rank로 시작하는 파일만 category 자동 지정
+if source_filename.startswith("rank"):
     if "skincare" in input_path_lower:
         category_value = "스킨케어"
     elif "manscare" in input_path_lower:
@@ -237,8 +276,14 @@ if "category" not in df_processed.columns:
     if category_value:
         df_processed = df_processed.withColumn("category", lit(category_value))
 
-# 소스 파일명 추출 (확장자 제거)
-source_filename = os.path.splitext(os.path.basename(input_path))[0]
+# 필요 없는 컬럼들 삭제
+drop_columns = [
+    "Convenience", "durability", "exp", "package", "refreshing",
+    "skin_type", "stimulate", "taste", "vitality", "link"
+]
+for col_name in drop_columns:
+    if col_name in df_processed.columns:
+        df_processed = df_processed.drop(col_name)
 
 # flagList 테이블 parquet 저장
 if "flagList" in df_processed.columns:
@@ -302,9 +347,54 @@ df_main = df_main.withColumn(
     col("isSoldout").cast("smallint")
 )
 
+# ingredient → ingredients 컬럼명 통일 (product 테이블 저장 전)
+if "ingredient" in df_main.columns:
+    df_main = df_main.withColumnRenamed("ingredient", "ingredients")
+
+# detail, ingredients 컬럼이 없으면 빈 문자열로 생성
+for col_name in ["detail", "ingredients"]:
+    if col_name not in df_main.columns:
+        df_main = df_main.withColumn(col_name, lit("").cast("string"))
+
+# totalcoment → totalcomment 컬럼명 통일
+if "totalcoment" in df_main.columns:
+    df_main = df_main.withColumnRenamed("totalcoment", "totalcomment")
+
+# int로 변환해야 하는 컬럼 리스트
+int_columns = [
+    "isPB", "isSoldout", "rank", "numOfReviews",
+    "pctOf1", "pctOf2", "pctOf3", "pctOf4", "pctOf5"
+]
+for col_name in int_columns:
+    if col_name in df_main.columns:
+        df_main = df_main.withColumn(
+            col_name,
+            when((col(col_name).isNull()) | (col(col_name) == ""), 0)
+            .otherwise(regexp_replace(col(col_name).cast("string"), ",", "").cast("int"))
+        )
+
+# string 컬럼의 null을 ""로, int 컬럼의 null을 0으로 변환
+for col_name, dtype in df_main.dtypes:
+    if dtype == "string":
+        df_main = df_main.withColumn(col_name, when(col(col_name).isNull(), lit("")).otherwise(col(col_name)))
+    elif dtype in ["int", "bigint", "smallint"]:
+        df_main = df_main.withColumn(col_name, when(col(col_name).isNull(), lit(0)).otherwise(col(col_name)))
+
+# avgReview 컬럼을 float형으로 변환
+if "avgReview" in df_main.columns:
+    df_main = df_main.withColumn(
+        "avgReview",
+        when((col("avgReview").isNull()) | (col("avgReview") == ""), 0)
+        .otherwise(col("avgReview").cast("float"))
+    )
+
+# 컬럼 목록 출력
+print(f"product 테이블에 저장되는 컬럼 목록: {df_main.columns}")
+
 main_output_path = f"{output_path.rstrip('/')}/pp_{source_filename}_product"
 df_main.write.mode("append").parquet(main_output_path)
 print(f"product 테이블 정보가 {main_output_path}에 parquet 형식으로 추가 저장되었습니다.")
+
 
 # Spark 세션 종료
 spark.stop()
