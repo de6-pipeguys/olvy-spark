@@ -234,6 +234,7 @@ if "reviewDetail" in df_processed.columns:
         clean_review_detail_gauge_udf(col("reviewDetail"))
     )
 
+
 # 소스 파일명 추출 (확장자 제거)
 source_filename = os.path.splitext(os.path.basename(input_path))[0]
 
@@ -276,6 +277,7 @@ if source_filename.startswith("rank"):
     if category_value:
         df_processed = df_processed.withColumn("category", lit(category_value))
 
+
 # 필요 없는 컬럼들 삭제
 drop_columns = [
     "Convenience", "durability", "exp", "package", "refreshing",
@@ -284,6 +286,7 @@ drop_columns = [
 for col_name in drop_columns:
     if col_name in df_processed.columns:
         df_processed = df_processed.drop(col_name)
+
 
 # flagList 테이블 parquet 저장
 if "flagList" in df_processed.columns:
@@ -309,6 +312,7 @@ if "flagList" in df_processed.columns:
     flag_output_path = f"{output_path.rstrip('/')}/pp_{source_filename}_flag"
     flag_df.write.mode("append").parquet(flag_output_path)
     print(f"flagList 정보 테이블이 {flag_output_path}에 parquet 형식으로 추가 저장되었습니다.")
+
 
 # reviewDetail 테이블 parquet 저장
 if "reviewDetail" in df_processed.columns:
@@ -380,6 +384,7 @@ for col_name, dtype in df_main.dtypes:
     elif dtype in ["int", "bigint", "smallint"]:
         df_main = df_main.withColumn(col_name, when(col(col_name).isNull(), lit(0)).otherwise(col(col_name)))
 
+
 # avgReview 컬럼을 float형으로 변환
 if "avgReview" in df_main.columns:
     df_main = df_main.withColumn(
@@ -388,12 +393,14 @@ if "avgReview" in df_main.columns:
         .otherwise(col("avgReview").cast("float"))
     )
 
+
 # 컬럼 목록 출력
 print(f"product 테이블에 저장되는 컬럼 목록: {df_main.columns}")
 
 main_output_path = f"{output_path.rstrip('/')}/pp_{source_filename}_product"
 df_main.write.mode("append").parquet(main_output_path)
 print(f"product 테이블 정보가 {main_output_path}에 parquet 형식으로 추가 저장되었습니다.")
+
 
 
 # Spark 세션 종료

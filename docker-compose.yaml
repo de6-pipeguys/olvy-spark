@@ -7,6 +7,7 @@ x-spark-common: &spark-common
   volumes:
     - ./jobs:/opt/bitnami/spark/jobs
     - ./jars:/opt/bitnami/spark/jars
+    - ./scripts:/opt/bitnami/spark/scripts
   networks:
     - code-with-yu
 
