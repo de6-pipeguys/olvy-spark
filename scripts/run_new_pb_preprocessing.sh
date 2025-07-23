@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BRANDS=("biohealboh" "bringgreen" "roundaround" "idealforman" "careplus" "delightproject")
+BRANDS=("biohealboh" "bringgreen" "roundaround" "idealforman" "careplus" "delightproject" "shingmulnara")
 BUCKET="de6-team5-bucket"
 TODAY=$(date +%Y%m%d)
 
