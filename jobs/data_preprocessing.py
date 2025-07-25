@@ -1,6 +1,6 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, regexp_replace, trim, when, to_timestamp, date_format, udf, explode, expr, concat, lit, split
-from pyspark.sql.types import *
+from pyspark.sql.types import ArrayType, StructType, StructField, IntegerType, StringType
 import sys
 import os
 import re
@@ -162,7 +162,7 @@ def clean_review_detail_gauge(review_detail):
         gauge_str = new_item.get("gauge", "")
         try:
             new_item["gauge"] = int(gauge_str.replace("%", "")) if gauge_str else None
-        except:
+        except Exception:
             new_item["gauge"] = None
         result.append(new_item)
     return result
